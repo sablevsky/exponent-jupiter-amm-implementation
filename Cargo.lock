@@ -1533,6 +1533,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "dotenv"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77c90badedccf4105eca100756a0b1289e191f6fcbdadd3cee1d2f614f97da8f"
+
+[[package]]
 name = "downcast"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1712,6 +1718,12 @@ dependencies = [
  "event-listener 5.4.0",
  "pin-project-lite",
 ]
+
+[[package]]
+name = "exponent-time-curve"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "26f8b68739d1d9c47a468667693780aefc4d5bc962908a2dfc39177136fd1108"
 
 [[package]]
 name = "fastbloom"
@@ -2573,7 +2585,10 @@ dependencies = [
  "assert_matches",
  "async-trait",
  "bincode",
+ "borsh 0.10.4",
  "clap",
+ "dotenv",
+ "exponent-time-curve",
  "glob",
  "itertools 0.12.1",
  "jupiter",
@@ -2588,6 +2603,7 @@ dependencies = [
  "solana-program-test",
  "solana-sdk",
  "spl-associated-token-account 6.0.0",
+ "spl-math 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "spl-token 7.0.0",
  "spl-token-2022 7.0.0",
  "spl-token-swap",
@@ -6262,6 +6278,20 @@ dependencies = [
 [[package]]
 name = "spl-math"
 version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5cc5a6cc7a4f0cf7813ce44153bba73280909f697d7f6baf7b9f223a255e7887"
+dependencies = [
+ "borsh 1.5.7",
+ "num-derive",
+ "num-traits",
+ "solana-program",
+ "thiserror 1.0.69",
+ "uint",
+]
+
+[[package]]
+name = "spl-math"
+version = "0.3.0"
 source = "git+https://github.com/jup-ag/solana-program-library.git?rev=199de2208534f37fe077a0b1d7a9e17f305ed363#199de2208534f37fe077a0b1d7a9e17f305ed363"
 dependencies = [
  "num-traits",
@@ -6634,7 +6664,7 @@ dependencies = [
  "num-derive",
  "num-traits",
  "solana-program",
- "spl-math",
+ "spl-math 0.3.0 (git+https://github.com/jup-ag/solana-program-library.git?rev=199de2208534f37fe077a0b1d7a9e17f305ed363)",
  "spl-token 7.0.0",
  "spl-token-2022 6.0.0",
  "thiserror 2.0.12",

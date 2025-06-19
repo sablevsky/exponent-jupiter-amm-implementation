@@ -7,6 +7,7 @@ edition = "2021"
 
 [workspace.dependencies]
 anchor-lang = "0.31.0"
+borsh = { version = "0.10.3" }
 anchor-syn = "0.31.0"
 anchor-gen = "0.4.1"
 solana-sdk = "~2.1"

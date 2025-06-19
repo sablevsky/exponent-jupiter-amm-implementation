@@ -53,7 +53,7 @@ use super::loader::amm_factory;
 const JITOSOL_MINT: Pubkey = pubkey!("J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn");
 
 lazy_static! {
-    pub static ref TOKEN_MINT_AND_IN_AMOUNT: [(Pubkey, u64); 5] = [
+    pub static ref TOKEN_MINT_AND_IN_AMOUNT: [(Pubkey, u64); 7] = [
         (spl_token::native_mint::ID, 25_000_000_000),
         (JITOSOL_MINT, 8_000_000_000),
         (
@@ -62,6 +62,16 @@ lazy_static! {
         ),
         (constants::USDC_MINT, 1_110_000_000),
         (constants::USDT_MINT, 1_110_000_000),
+        // wFragSOL mint
+        (
+            pubkey!("WFRGSWjaz8tbAxsJitmbfRuFV2mSNwy7BMWcCwaA28U"),
+            1_000_000_000
+        ),
+        //? PT-fragSOL mint
+        (
+            pubkey!("8adRViFUNTe3yexj2gbQtx929zBJtWJRM8TeTzYbQBgx"),
+            1_000_000_000
+        ),
     ];
     pub static ref TOKEN2022_MINT_AND_IN_AMOUNT: [(Pubkey, u64); 0] = [];
     pub static ref TOKEN_MINT_TO_IN_AMOUNT: HashMap<Pubkey, u64> = {
@@ -572,7 +582,8 @@ impl AmmTestHarness {
             "tests/fixtures/accounts/{0}/{1}.json",
             directory_name, self.key,
         );
-        let file = File::open(&file_path).unwrap_or_else(|_| panic!("Snapshot file {file_path} exists"));
+        let file =
+            File::open(&file_path).unwrap_or_else(|_| panic!("Snapshot file {file_path} exists"));
         let keyed_account: RpcKeyedAccount = serde_json::from_reader(file).unwrap();
         let account: Account = UiAccount::decode(&keyed_account.account).unwrap();
         let params_file_path = format!("tests/fixtures/accounts/{0}/params.json", directory_name);
