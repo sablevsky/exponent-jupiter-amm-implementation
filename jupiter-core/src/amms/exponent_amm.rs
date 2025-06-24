@@ -6,6 +6,7 @@ use jupiter_amm_interface::{
     SwapAndAccountMetas, SwapParams,
 };
 use lazy_static::lazy_static;
+use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use solana_sdk::{pubkey, pubkey::Pubkey};
 use std::collections::HashMap;
@@ -13,8 +14,8 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 
 use crate::exponent::{
-    precise_number::Number, trade, trade_asset, MarketTwo, TradeAssetResult, TradePt, TradeResult,
-    Vault,
+    precise_number::Number, trade, trade_asset, FundAccount, MarketTwo, TradeAssetResult, TradePt,
+    TradeResult,
 };
 
 mod exponent_swap_programs {
@@ -34,6 +35,7 @@ lazy_static! {
 pub struct AdditionalMarketData {
     pub original_mint: Pubkey,
     pub virtual_exchange_rate: bool,
+    pub fund_account: Pubkey,
 }
 
 lazy_static! {
@@ -44,6 +46,7 @@ lazy_static! {
         let wfragsol_additional_data = AdditionalMarketData {
             original_mint: pubkey!("WFRGSWjaz8tbAxsJitmbfRuFV2mSNwy7BMWcCwaA28U"),
             virtual_exchange_rate: true,
+            fund_account: pubkey!("3TK9fNePM4qdKC4dwvDe8Bamv14prDqdVfuANxPeiryb"),
         };
         m.insert(wfragsol_market_key, wfragsol_additional_data);
 
@@ -56,8 +59,9 @@ pub struct ExponentAmm {
     key: Pubkey,
     label: String,
     reserve_mints: [Pubkey; 2],
-    exchange_rate: Option<Number>, //? Number
+    exchange_rate: Option<Number>, //? Number E.g. 1 wfrag_sol = sol_amount ; 1 wfrag_sol = exchange_rate } // How much SOL should be paid for 1 wfrag_sol
     market: MarketTwo,
+    market_additional_data: AdditionalMarketData,
     // vault: Option<Vault>,
     // epoch: Arc<AtomicU64>,
     timestamp: Arc<AtomicI64>,
@@ -72,13 +76,12 @@ impl Amm for ExponentAmm {
 
         let market_state = MarketTwo::try_deserialize(&mut keyed_account.account.data.as_ref())?;
 
-        let original_mint = MARKET_ADDITIONAL_DATA
+        let market_additional_data = MARKET_ADDITIONAL_DATA
             .get(&market_state.self_address)
-            .unwrap()
-            .original_mint
-            .clone();
+            .unwrap();
 
-        let reserve_mints: [Pubkey; 2] = [original_mint, market_state.mint_pt];
+        let reserve_mints: [Pubkey; 2] =
+            [market_additional_data.original_mint, market_state.mint_pt];
 
         let label = EXPONENT_SWAP_PROGRAMS
             .get(&keyed_account.account.owner)
@@ -94,6 +97,7 @@ impl Amm for ExponentAmm {
             reserve_mints,
             exchange_rate: None,
             market: market_state,
+            market_additional_data: market_additional_data.clone(),
             // epoch: epoch.clone(),
             timestamp: timestamp.clone(),
             reserves: Default::default(),
@@ -122,8 +126,11 @@ impl Amm for ExponentAmm {
 
     //? The accounts necessary to produce a quote
     fn get_accounts_to_update(&self) -> Vec<Pubkey> {
-        // Update market and vault(to get exchange rate)
-        vec![self.market.self_address, self.market.vault]
+        // Update market and fund account(to get exchange rate)
+        vec![
+            self.market.self_address,
+            self.market_additional_data.fund_account,
+        ]
     }
 
     fn update(&mut self, account_map: &AccountMap) -> Result<()> {
@@ -132,12 +139,17 @@ impl Amm for ExponentAmm {
         // update market state
         self.market = market_state;
 
-        let vault_data = try_get_account_data(account_map, &self.market.vault)?;
-        let vault_state = Vault::try_deserialize(&mut vault_data.as_ref())?;
+        let fund_account_data =
+            try_get_account_data(account_map, &self.market_additional_data.fund_account)?;
 
-        let exchange_rate = vault_state.last_seen_sy_exchange_rate;
-        // update exchange rate
+        let fund_account: &FundAccount =
+            bytemuck::from_bytes(&fund_account_data[8..std::mem::size_of::<FundAccount>() + 8]);
+
+        let exchange_rate = fund_account.exchange_rate();
+
         self.exchange_rate = Some(exchange_rate);
+
+        println!("\nexchange_rate_1: {}", exchange_rate);
 
         // update reserves
         self.reserves = [
@@ -152,9 +164,11 @@ impl Amm for ExponentAmm {
         let time_now = self.timestamp.load(Ordering::Relaxed) as u64;
         let sy_exchange_rate = self.exchange_rate.unwrap();
 
+        let virtual_exchange_rate = self.market_additional_data.virtual_exchange_rate;
+
         println!("\nquote_params: {:?}\n", quote_params);
 
-        let is_buy_pt = quote_params.input_mint == self.reserve_mints[0];
+        let is_buy_pt = quote_params.input_mint == self.reserve_mints[1];
 
         // ceil on asset balance when buying PT (make asset cheaper)
         // floor on asset balance when selling PT (make asset more expensive)
@@ -175,16 +189,24 @@ impl Amm for ExponentAmm {
         let current_fee_rate = self.market.financials.cur_fee_rate(time_now);
 
         if is_buy_pt {
+            let net_trader_asset = if virtual_exchange_rate {
+                let trader_asset: Number =
+                    Number::from_natural_u64(quote_params.amount) * sy_exchange_rate;
+                -(trader_asset.floor_u64().to_i64().unwrap())
+            } else {
+                -(quote_params.amount as i64)
+            };
+
             let TradeAssetResult {
                 asset_fee,
-                net_trader_pt,
+                net_trader_pt: out_amount,
             } = trade_asset(
                 self.market.financials.pt_balance,
                 asset_balance,
                 current_rate_scalar,
                 current_rate_anchor,
                 current_fee_rate,
-                Num::from_i64(-(quote_params.amount as i64)),
+                Num::from_i64(net_trader_asset),
                 false,
             );
 
@@ -192,17 +214,24 @@ impl Amm for ExponentAmm {
                 "\nBUY PT:\nnet_trader_asset: {},\nasset_fee: {},\nnet_trader_pt: {} \n",
                 -(quote_params.amount as i64),
                 asset_fee,
-                net_trader_pt
+                out_amount
             );
 
             return Ok(Quote {
                 fee_pct: Decimal::default(), //TODO calc percent
                 in_amount: quote_params.amount,
-                out_amount: net_trader_pt as u64,
+                out_amount: out_amount as u64,
                 fee_amount: asset_fee as u64,
                 fee_mint: self.market.mint_sy,
             });
         } else {
+            let net_trader_pt = if virtual_exchange_rate {
+                let trader_asset = Number::from_natural_u64(quote_params.amount) / sy_exchange_rate;
+                -(trader_asset.floor_u64().to_i64().unwrap())
+            } else {
+                -(quote_params.amount as i64)
+            };
+
             let TradeResult {
                 asset_fee,
                 net_trader_asset,
@@ -212,7 +241,7 @@ impl Amm for ExponentAmm {
                 current_rate_scalar,
                 current_rate_anchor,
                 current_fee_rate,
-                Num::from_i64(-(quote_params.amount as i64)),
+                Num::from_i64(net_trader_pt),
                 false,
             );
 
@@ -244,8 +273,10 @@ impl Amm for ExponentAmm {
             ..
         } = swap_params;
 
+        //TODO generate remaining accounts here
+
         Ok(SwapAndAccountMetas {
-            swap: Swap::TokenSwap, //TODO what swap method here? I think we need to contact jup team so they can add our Swap method
+            swap: Swap::TokenSwap, //TODO change swap method here?
             //? do_cpi_trade_pt accounts
             account_metas: TradePt {
                 trader: *token_transfer_authority,

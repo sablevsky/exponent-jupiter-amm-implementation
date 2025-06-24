@@ -8,6 +8,7 @@ edition = { workspace = true }
 ahash = "0.8.11"
 anchor-lang = { workspace = true }
 borsh = { workspace = true }
+bytemuck = { version = "1.16.3", features = ["min_const_generics"] }
 exponent-time-curve = "0.1.0"
 solana-sdk = { workspace = true }
 solana-client = { workspace = true }
