@@ -168,7 +168,7 @@ impl Amm for ExponentAmm {
 
         println!("\nquote_params: {:?}\n", quote_params);
 
-        let is_buy_pt = quote_params.input_mint == self.reserve_mints[1];
+        let is_buy_pt = quote_params.input_mint == self.reserve_mints[0];
 
         // ceil on asset balance when buying PT (make asset cheaper)
         // floor on asset balance when selling PT (make asset more expensive)
