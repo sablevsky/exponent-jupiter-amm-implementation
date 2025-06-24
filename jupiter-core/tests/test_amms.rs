@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use ahash::RandomState;
 use anyhow::Error;
-use dotenv::dotenv;
 use jupiter_amm_interface::{AmmContext, ClockRef, KeyedAccount, SwapMode};
 use jupiter_core::{
     amm::Amm,
@@ -15,7 +14,6 @@ use jupiter_core::{
 };
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::{account::Account, pubkey};
-use std::env;
 
 /// Loads AMM from snapshot and tests quoting
 async fn test_quoting_for_amm_key<T: Amm + 'static>(
@@ -30,11 +28,7 @@ async fn test_quoting_for_amm_key<T: Amm + 'static>(
 ) where
     T: Amm,
 {
-    dotenv().ok();
-    let rpc_url = env::var("RPC_URL").expect("RPC_URL must be set");
-    // println!("DB URL: {}", rpc_url);
-
-    let test_harness = AmmTestHarness::new_with_rpc_url(rpc_url.into(), amm_key, option);
+    let test_harness = AmmTestHarness::new_with_rpc_url("".into(), amm_key, option);
     let keyed_account: KeyedAccount = test_harness.get_keyed_account_from_snapshot().unwrap();
 
     let amm_context = AmmContext {

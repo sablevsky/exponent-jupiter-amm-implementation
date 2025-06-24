@@ -7,7 +7,6 @@ edition = { workspace = true }
 [dependencies]
 ahash = "0.8.11"
 anchor-lang = { workspace = true }
-dotenv = "0.15"
 borsh = { workspace = true }
 exponent-time-curve = "0.1.0"
 solana-sdk = { workspace = true }
