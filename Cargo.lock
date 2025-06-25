@@ -2556,7 +2556,6 @@ dependencies = [
 [[package]]
 name = "jupiter-amm-interface"
 version = "0.5.1"
-source = "git+https://github.com/sablevsky/jupiter-amm-interface?branch=exponent#b0c26c0ef561c2ab0e214e1459ada653461cc6b7"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",

@@ -345,18 +345,19 @@ impl Amm for ExponentAmm {
             .into();
 
             let account_metas = [
-                remaining_accounts.as_slice(),
-                mint_sy_remaining_accounts.as_slice(),
                 trade_metas.as_slice(),
+                mint_sy_remaining_accounts.as_slice(),
+                remaining_accounts.as_slice(),
             ]
             .concat();
 
             //? Param that is needed for buy_pt instruction
-            // let mint_sy_rem_accounts_until = mint_sy_remaining_accounts.len();
+            let mint_sy_rem_accounts_until = mint_sy_remaining_accounts.len();
 
             Ok(SwapAndAccountMetas {
                 swap: Swap::Exponent {
                     exchange_rate: exchange_rate_f64,
+                    rem_accounts_until: mint_sy_rem_accounts_until,
                 },
                 account_metas,
             })
@@ -383,18 +384,19 @@ impl Amm for ExponentAmm {
             .into();
 
             let account_metas = [
-                remaining_accounts.as_slice(),
-                redeem_sy_accounts.as_slice(),
                 trade_metas.as_slice(),
+                redeem_sy_accounts.as_slice(),
+                remaining_accounts.as_slice(),
             ]
             .concat();
 
             //? Param that is needed for sell_pt instruction
-            // let redeem_sy_rem_accounts_until = redeem_sy_accounts.len();
+            let redeem_sy_rem_accounts_until = redeem_sy_accounts.len();
 
             Ok(SwapAndAccountMetas {
                 swap: Swap::Exponent {
                     exchange_rate: exchange_rate_f64,
+                    rem_accounts_until: redeem_sy_rem_accounts_until,
                 },
                 account_metas,
             })
