@@ -285,6 +285,8 @@ impl Amm for ExponentAmm {
 
         let is_buy_pt = *source_mint == self.reserve_mints[0];
 
+        let exchange_rate_f64 = self.exchange_rate.unwrap().to_f64().unwrap();
+
         let user_base_token_ata = get_associated_token_address(
             &token_transfer_authority,
             &self.market_additional_data.original_mint,
@@ -350,11 +352,12 @@ impl Amm for ExponentAmm {
             .concat();
 
             //? Param that is needed for buy_pt instruction
-            let mint_sy_rem_accounts_until = mint_sy_remaining_accounts.len();
+            // let mint_sy_rem_accounts_until = mint_sy_remaining_accounts.len();
 
             Ok(SwapAndAccountMetas {
-                swap: Swap::TokenSwap, //TODO change swap method here
-                //? do_cpi_trade_pt accounts
+                swap: Swap::Exponent {
+                    exchange_rate: exchange_rate_f64,
+                },
                 account_metas,
             })
         } else {
@@ -387,10 +390,12 @@ impl Amm for ExponentAmm {
             .concat();
 
             //? Param that is needed for sell_pt instruction
-            let redeem_sy_rem_accounts_until = redeem_sy_accounts.len();
+            // let redeem_sy_rem_accounts_until = redeem_sy_accounts.len();
 
             Ok(SwapAndAccountMetas {
-                swap: Swap::TokenSwap, //TODO change swap method here
+                swap: Swap::Exponent {
+                    exchange_rate: exchange_rate_f64,
+                },
                 account_metas,
             })
         }

@@ -2556,8 +2556,7 @@ dependencies = [
 [[package]]
 name = "jupiter-amm-interface"
 version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb5138000fadc3d0bcd8c6b347fa262bf2df43ec4132abca4ee7e8fff1878bc9"
+source = "git+https://github.com/sablevsky/jupiter-amm-interface?branch=exponent#b0c26c0ef561c2ab0e214e1459ada653461cc6b7"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
