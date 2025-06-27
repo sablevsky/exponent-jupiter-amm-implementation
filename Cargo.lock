@@ -2486,6 +2486,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4a5f13b858c8d314ee3e8f639011f7ccefe71f97f96e50151fb991f267928e2c"
 
 [[package]]
+name = "jito-account-traits-derive"
+version = "0.0.3"
+source = "git+https://github.com/valentinmadrid/jito-restaking?branch=master#b7aa9c656d184cd893074a47cbe5aefbd24e790e"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.101",
+]
+
+[[package]]
+name = "jito-bytemuck"
+version = "0.0.3"
+source = "git+https://github.com/valentinmadrid/jito-restaking?branch=master#b7aa9c656d184cd893074a47cbe5aefbd24e790e"
+dependencies = [
+ "borsh 0.10.4",
+ "bytemuck",
+ "jito-account-traits-derive",
+ "solana-program",
+]
+
+[[package]]
 name = "jni"
 version = "0.21.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2556,6 +2577,7 @@ dependencies = [
 [[package]]
 name = "jupiter-amm-interface"
 version = "0.5.1"
+source = "git+https://github.com/sablevsky/jupiter-amm-interface?branch=exponent#067cf0c358470a6c2e890c0f2ccdddaa77d5a226"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -2583,6 +2605,7 @@ dependencies = [
  "exponent-time-curve",
  "glob",
  "itertools 0.12.1",
+ "jito-bytemuck",
  "jupiter",
  "jupiter-amm-interface",
  "lazy_static",
@@ -2596,6 +2619,7 @@ dependencies = [
  "solana-sdk",
  "spl-associated-token-account 6.0.0",
  "spl-math 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "spl-stake-pool",
  "spl-token 7.0.0",
  "spl-token-2022 7.0.0",
  "spl-token-swap",
@@ -6383,6 +6407,28 @@ dependencies = [
  "quote",
  "sha2 0.10.9",
  "syn 2.0.101",
+]
+
+[[package]]
+name = "spl-stake-pool"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc2b2908579aefbdb1ed3e941252cab09e7e471e5b52efd5ecc54d20829ef5e8"
+dependencies = [
+ "arrayref",
+ "bincode",
+ "borsh 1.5.7",
+ "bytemuck",
+ "num-derive",
+ "num-traits",
+ "num_enum",
+ "serde",
+ "serde_derive",
+ "solana-program",
+ "solana-security-txt",
+ "spl-pod 0.3.1",
+ "spl-token-2022 4.0.0",
+ "thiserror 2.0.12",
 ]
 
 [[package]]

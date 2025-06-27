@@ -1,5 +1,5 @@
-use anchor_lang::prelude::AccountMeta;
 use anchor_lang::AccountDeserialize;
+use anchor_lang::{prelude::*, solana_program::borsh1};
 use anyhow::Result;
 use exponent_time_curve::num::Num;
 use jupiter_amm_interface::{
@@ -11,20 +11,50 @@ use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use solana_sdk::{address_lookup_table::state::AddressLookupTable, pubkey, pubkey::Pubkey};
 use spl_associated_token_account::get_associated_token_address;
+use spl_stake_pool::state::StakePool;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 
+use crate::exponent::kyros;
 use crate::exponent::{
-    cpi_contexts_to_account_metas, precise_number::Number, trade, trade_asset, unique_cpi_contexts,
-    CpiAccounts, FundAccount, MarketTwo, MintSyAccounts, RedeemSyAccounts, TradeAssetResult,
-    TradePt, TradeResult,
+    fragmetric,
+    kyros::JitoVault,
+    math::{trade, trade_asset, TradeAssetResult},
+    precise_number::Number,
+    state::{
+        cpi_contexts_to_account_metas, CpiAccounts, CpiInterfaceContext, FundAccount, MarketTwo,
+    },
+    unique_cpi_contexts, TradePt, TradeResult,
 };
 
 mod exponent_swap_programs {
     use super::*;
     pub const EXPONENT_CORE: Pubkey = pubkey!("ExponentnaRg3CQbW6dqQNZKXp7gtZ9DGMp1cwC4HAS7");
 }
+
+mod exponent_hardcoded_amm_data {
+    use super::*;
+
+    pub const WFRAGSOL_MARKET: Pubkey = pubkey!("EJ4GPTCnNtemBVrT7QKhRfSKfM53aV2UJYGAC8gdVz5b");
+    pub const WFRAGSOL_MINT: Pubkey = pubkey!("WFRGSWjaz8tbAxsJitmbfRuFV2mSNwy7BMWcCwaA28U");
+    pub const WFRAGSOL_FUND_ACCOUNT: Pubkey =
+        pubkey!("3TK9fNePM4qdKC4dwvDe8Bamv14prDqdVfuANxPeiryb"); //? Can we get it from sy_account?
+    pub const WFRAGSOL_SY_META_ADDRESS: Pubkey =
+        pubkey!("8EC8D6FG4ATRTScZvziTgtrcMv9Edvwv3hHmZNdnTCg"); //? Can we get it from mint/token_program?
+
+    pub const KYSOL_MARKET: Pubkey = pubkey!("3xckb8Z5NfqptY4Pzg3KQ1bPr8ufB8CE4gJo4YMVsXvi"); //TODO: change
+    pub const KYSOL_MINT: Pubkey = pubkey!("kySo1nETpsZE2NWe5vj2C64mPSciH1SppmHb4XieQ7B");
+    pub const KYSOL_SY_META_ADDRESS: Pubkey =
+        pubkey!("4u2L26Bu8Cs1ZbWCPhv6mUtUxeqL5xC8cPh81DoW15Ad");
+
+    pub const JITO_STAKE_POOL: Pubkey = pubkey!("Jito4APyf642JPZPx3hGc6WWJ8zPKtRbRs4P815Awbb");
+    pub const JITO_VAULT: Pubkey = pubkey!("CQpvXgoaaawDCLh8FwMZEwQqnPakRUZ5BnzhjnEBPJv");
+}
+
+//? 1 get jito exchange rate using jito vault
+//? 2 get jito exchange rate using stake pool
+//? 3 multiply them
 
 lazy_static! {
     pub static ref EXPONENT_SWAP_PROGRAMS: HashMap<Pubkey, String> = {
@@ -34,35 +64,67 @@ lazy_static! {
     };
 }
 
+//? Common data for all markets
 #[derive(Clone)]
 pub struct AdditionalMarketData {
     pub original_mint: Pubkey,
     pub virtual_exchange_rate: bool,
-    pub fund_account: Pubkey,
+    // pub fund_account: Pubkey,
     pub sy_meta_address: Pubkey,
 }
 
-lazy_static! {
-    pub static ref MARKET_ADDITIONAL_DATA: HashMap<Pubkey, AdditionalMarketData> = {
-        let mut m = HashMap::new();
-
-        let wfragsol_market_key = pubkey!("EJ4GPTCnNtemBVrT7QKhRfSKfM53aV2UJYGAC8gdVz5b");
-        let wfragsol_additional_data = AdditionalMarketData {
-            original_mint: pubkey!("WFRGSWjaz8tbAxsJitmbfRuFV2mSNwy7BMWcCwaA28U"),
+pub fn get_market_additional_data(
+    market_pubkey: Pubkey,
+) -> Result<AdditionalMarketData, anyhow::Error> {
+    if market_pubkey == exponent_hardcoded_amm_data::WFRAGSOL_MARKET {
+        Ok(AdditionalMarketData {
+            original_mint: exponent_hardcoded_amm_data::WFRAGSOL_MINT,
             virtual_exchange_rate: true,
-            fund_account: pubkey!("3TK9fNePM4qdKC4dwvDe8Bamv14prDqdVfuANxPeiryb"), //? Can be generated from FRAGMETRIC_PROGRAM_ID
-            sy_meta_address: pubkey!("8EC8D6FG4ATRTScZvziTgtrcMv9Edvwv3hHmZNdnTCg"),
-        };
-        m.insert(wfragsol_market_key, wfragsol_additional_data);
+            sy_meta_address: exponent_hardcoded_amm_data::WFRAGSOL_SY_META_ADDRESS,
+        })
+    } else if market_pubkey == exponent_hardcoded_amm_data::KYSOL_MARKET {
+        Ok(AdditionalMarketData {
+            original_mint: exponent_hardcoded_amm_data::KYSOL_MINT,
+            virtual_exchange_rate: true,
+            sy_meta_address: exponent_hardcoded_amm_data::KYSOL_SY_META_ADDRESS,
+        })
+    } else {
+        Err(anyhow::anyhow!("Unknown market pubkey"))
+    }
+}
 
-        m
-    };
+//? Stores specific data for each market
+#[derive(Clone)]
+pub enum ExponentAmmType {
+    WFragSol {
+        fund_account: Pubkey,
+    },
+    KySol {
+        jito_stake_pool: Pubkey,
+        jito_vault: Pubkey,
+    }, //? Add restaking_vault in future
+}
+
+pub fn get_amm_type_from_market(market_pubkey: Pubkey) -> Result<ExponentAmmType, anyhow::Error> {
+    if market_pubkey == exponent_hardcoded_amm_data::WFRAGSOL_MARKET {
+        Ok(ExponentAmmType::WFragSol {
+            fund_account: exponent_hardcoded_amm_data::WFRAGSOL_FUND_ACCOUNT,
+        })
+    } else if market_pubkey == exponent_hardcoded_amm_data::KYSOL_MARKET {
+        Ok(ExponentAmmType::KySol {
+            jito_stake_pool: exponent_hardcoded_amm_data::JITO_STAKE_POOL,
+            jito_vault: exponent_hardcoded_amm_data::JITO_VAULT,
+        })
+    } else {
+        Err(anyhow::anyhow!("Unknown market pubkey"))
+    }
 }
 
 #[derive(Clone)]
 pub struct ExponentAmm {
     key: Pubkey,
     label: String,
+    amm_type: ExponentAmmType,
     reserve_mints: [Pubkey; 2],
     exchange_rate: Option<Number>, //? I.e. How much sol should be paid for 1 wfrag_sol
     market: MarketTwo,
@@ -73,13 +135,164 @@ pub struct ExponentAmm {
     program_id: Pubkey,
 }
 
+impl ExponentAmm {
+    //? can be used only in update function
+    //! Ask about virtual exchange rate! What exchange_rate does jup/titan need?
+    fn get_exchange_rate(&mut self, account_map: &AccountMap) -> Result<Number, anyhow::Error> {
+        match self.amm_type {
+            ExponentAmmType::WFragSol { fund_account, .. } => {
+                let fund_account_data = try_get_account_data(account_map, &fund_account)?;
+                let fund_account: &FundAccount = bytemuck::from_bytes(
+                    &fund_account_data[8..std::mem::size_of::<FundAccount>() + 8],
+                );
+                Ok(fund_account.exchange_rate())
+            }
+            ExponentAmmType::KySol {
+                jito_stake_pool,
+                jito_vault,
+                ..
+            } => {
+                let jito_vault_account_data = try_get_account_data(account_map, &jito_vault)?;
+                let jito_vault = JitoVault::deserialize(&jito_vault_account_data);
+                let jito_vault_exchange_rate = jito_vault.exchange_index();
+
+                let stake_pool_account_data = try_get_account_data(account_map, &jito_stake_pool)?;
+                let stake_pool: StakePool =
+                    borsh1::try_from_slice_unchecked(&mut stake_pool_account_data.as_ref())?;
+                let stake_pool_rate = Number::from_natural_u64(stake_pool.total_lamports)
+                    .checked_div(&Number::from_natural_u64(stake_pool.pool_token_supply))
+                    .unwrap();
+
+                let exchange_rate = stake_pool_rate
+                    .checked_mul(&jito_vault_exchange_rate)
+                    .unwrap();
+
+                Ok(exchange_rate)
+            }
+        }
+    }
+
+    fn get_specific_accounts_to_update(&self) -> Vec<Pubkey> {
+        match self.amm_type {
+            ExponentAmmType::WFragSol { fund_account, .. } => vec![fund_account],
+            ExponentAmmType::KySol {
+                jito_stake_pool,
+                jito_vault,
+                ..
+            } => vec![jito_stake_pool, jito_vault],
+        }
+    }
+
+    fn get_trade_metas(&self, wallet_address: Pubkey) -> Vec<AccountMeta> {
+        let user_sy_token_ata = get_associated_token_address(&wallet_address, &self.market.mint_sy);
+        let user_pt_token_ata = get_associated_token_address(&wallet_address, &self.market.mint_pt);
+
+        TradePt {
+            trader: wallet_address,
+            market: self.market.self_address,
+            token_sy_trader: user_sy_token_ata,
+            token_pt_trader: user_pt_token_ata,
+            token_sy_escrow: self.market.token_sy_escrow,
+            token_pt_escrow: self.market.token_pt_escrow,
+            address_lookup_table: self.market.address_lookup_table,
+            token_program: spl_token::id(),
+            sy_program: self.market.sy_program,
+            token_fee_treasury_sy: self.market.token_fee_treasury_sy,
+        }
+        .into()
+    }
+
+    fn get_mint_sy_metas(&self, wallet_address: Pubkey) -> Vec<AccountMeta> {
+        let user_base_token_ata = get_associated_token_address(
+            &wallet_address,
+            &self.market_additional_data.original_mint,
+        );
+        let user_sy_token_ata = get_associated_token_address(&wallet_address, &self.market.mint_sy);
+        let meta_base_token_ata = get_associated_token_address(
+            &self.market_additional_data.sy_meta_address,
+            &self.market_additional_data.original_mint,
+        );
+
+        match self.amm_type {
+            ExponentAmmType::WFragSol { .. } => fragmetric::MintSyAccounts {
+                depositor: wallet_address,
+                meta: self.market_additional_data.sy_meta_address,
+                mint_sy: self.market.mint_sy,
+                token_base_depositor: user_base_token_ata,
+                token_yield_bearing_escrow: meta_base_token_ata,
+                token_sy_depositor: user_sy_token_ata,
+                base_token_program: spl_token::id(),
+                token_program: spl_token::id(),
+            }
+            .into(),
+            ExponentAmmType::KySol { jito_vault, .. } => kyros::MintSyAccounts {
+                depositor: wallet_address,
+                meta: self.market_additional_data.sy_meta_address,
+                mint_sy: self.market.mint_sy,
+                token_base_depositor: user_base_token_ata,
+                token_vrt_escrow: meta_base_token_ata,
+                token_sy_depositor: user_sy_token_ata,
+                jito_vault,
+                base_token_program: spl_token::id(),
+                token_program: spl_token::id(),
+            }
+            .into(),
+        }
+    }
+
+    fn get_redeem_sy_metas(&self, wallet_address: Pubkey) -> Vec<AccountMeta> {
+        let user_base_token_ata = get_associated_token_address(
+            &wallet_address,
+            &self.market_additional_data.original_mint,
+        );
+        let user_sy_token_ata = get_associated_token_address(&wallet_address, &self.market.mint_sy);
+        let meta_base_token_ata = get_associated_token_address(
+            &self.market_additional_data.sy_meta_address,
+            &self.market_additional_data.original_mint,
+        );
+
+        match self.amm_type {
+            ExponentAmmType::WFragSol { .. } => fragmetric::RedeemSyAccounts {
+                signer: wallet_address,
+                meta: self.market_additional_data.sy_meta_address,
+                token_base_dst: user_base_token_ata,
+                token_yield_bearing_escrow: meta_base_token_ata,
+                token_sy_signer: user_sy_token_ata,
+                mint_sy: self.market.mint_sy,
+                base_token_program: spl_token::id(),
+                token_program: spl_token::id(),
+            }
+            .into(),
+            ExponentAmmType::KySol { jito_vault, .. } => kyros::RedeemSyAccounts {
+                signer: wallet_address,
+                meta: self.market_additional_data.sy_meta_address,
+                jito_vault,
+                token_base_dst: user_base_token_ata,
+                token_vrt_escrow: meta_base_token_ata,
+                token_sy_signer: user_sy_token_ata,
+                mint_sy: self.market.mint_sy,
+                base_token_program: spl_token::id(),
+                token_program: spl_token::id(),
+            }
+            .into(),
+        }
+    }
+
+    fn get_remaining_accounts_metas(&self, contexts: &[CpiInterfaceContext]) -> Vec<AccountMeta> {
+        let unique_cpi = unique_cpi_contexts(contexts);
+        cpi_contexts_to_account_metas(
+            &unique_cpi,
+            self.market_lookup_table_accounts.as_ref().unwrap(),
+        )
+        .into()
+    }
+}
+
 impl Amm for ExponentAmm {
     fn from_keyed_account(keyed_account: &KeyedAccount, amm_context: &AmmContext) -> Result<Self> {
         let market_state = MarketTwo::try_deserialize(&mut keyed_account.account.data.as_ref())?;
 
-        let market_additional_data = MARKET_ADDITIONAL_DATA
-            .get(&market_state.self_address)
-            .unwrap();
+        let market_additional_data = get_market_additional_data(market_state.self_address).unwrap();
 
         let reserve_mints: [Pubkey; 2] =
             [market_additional_data.original_mint, market_state.mint_pt];
@@ -92,9 +305,12 @@ impl Amm for ExponentAmm {
         // let epoch = amm_context.clock_ref.epoch.clone();
         let timestamp = amm_context.clock_ref.unix_timestamp.clone();
 
+        let amm_type = get_amm_type_from_market(market_state.self_address).unwrap();
+
         Ok(Self {
             key: keyed_account.key,
             label,
+            amm_type,
             reserve_mints,
             exchange_rate: None,
             market: market_state,
@@ -127,12 +343,12 @@ impl Amm for ExponentAmm {
 
     //? The accounts necessary to produce a quote
     fn get_accounts_to_update(&self) -> Vec<Pubkey> {
+        let specific_accounts = self.get_specific_accounts_to_update();
+
         // Update market, fund account(to get exchange rate) and lookup table
-        vec![
-            self.market.self_address,
-            self.market_additional_data.fund_account,
-            self.market.address_lookup_table,
-        ]
+        let mut accounts = vec![self.market.self_address, self.market.address_lookup_table];
+        accounts.extend(specific_accounts);
+        accounts
     }
 
     fn update(&mut self, account_map: &AccountMap) -> Result<()> {
@@ -141,13 +357,7 @@ impl Amm for ExponentAmm {
         // update market state
         self.market = market_state;
 
-        let fund_account_data =
-            try_get_account_data(account_map, &self.market_additional_data.fund_account)?;
-        let fund_account: &FundAccount =
-            bytemuck::from_bytes(&fund_account_data[8..std::mem::size_of::<FundAccount>() + 8]);
-        let exchange_rate = fund_account.exchange_rate();
-        // set exchange rate
-        self.exchange_rate = Some(exchange_rate);
+        self.exchange_rate = Some(self.get_exchange_rate(account_map)?);
 
         // update reserves
         self.reserves = [
@@ -219,12 +429,14 @@ impl Amm for ExponentAmm {
                 false,
             );
 
-            // println!(
-            //     "\nBUY PT:\nnet_trader_asset: {},\nasset_fee: {},\nnet_trader_pt: {} \n",
-            //     -(quote_params.amount as i64),
-            //     asset_fee,
-            //     out_amount
-            // );
+            println!(
+                "\nBUY PT:\ninput_mint: {},\noutput_mint: {},\nnet_trader_asset: {},\nasset_fee: {},\nnet_trader_pt: {} \n",
+                quote_params.input_mint,
+                quote_params.output_mint,
+                -(quote_params.amount as i64),
+                asset_fee,
+                out_amount
+            );
 
             return Ok(Quote {
                 fee_pct: Decimal::default(), //TODO How to calculate fee_pct in a proper way?
@@ -254,12 +466,14 @@ impl Amm for ExponentAmm {
                 false,
             );
 
-            // println!(
-            //     "\nSELL PT:\nnet_trader_pt: {},\n asset_fee: {},\nnet_trader_asset: {}\n",
-            //     -(quote_params.amount as i64),
-            //     asset_fee,
-            //     net_trader_asset
-            // );
+            println!(
+                "\nSELL PT:\ninput_mint: {},\noutput_mint: {},\nnet_trader_pt: {},\n asset_fee: {},\nnet_trader_asset: {}\n",
+                quote_params.input_mint,
+                quote_params.output_mint,
+                -(quote_params.amount as i64),
+                asset_fee,
+                net_trader_asset
+            );
 
             return Ok(Quote {
                 fee_pct: Decimal::default(), //TODO How to calculate fee_pct in a proper way?
@@ -282,38 +496,10 @@ impl Amm for ExponentAmm {
             source_mint,
             ..
         } = swap_params;
-
         let is_buy_pt = *source_mint == self.reserve_mints[0];
-
         let exchange_rate_f64 = self.exchange_rate.unwrap().to_f64().unwrap();
 
-        let user_base_token_ata = get_associated_token_address(
-            &token_transfer_authority,
-            &self.market_additional_data.original_mint,
-        );
-        let user_sy_token_ata =
-            get_associated_token_address(&token_transfer_authority, &self.market.mint_sy);
-        let user_pt_token_ata =
-            get_associated_token_address(&token_transfer_authority, &self.market.mint_pt);
-
-        let meta_base_token_ata = get_associated_token_address(
-            &self.market_additional_data.sy_meta_address,
-            &self.market_additional_data.original_mint,
-        );
-
-        let trade_metas: Vec<AccountMeta> = TradePt {
-            trader: *token_transfer_authority,
-            market: self.market.self_address,
-            token_sy_trader: user_sy_token_ata,
-            token_pt_trader: user_pt_token_ata,
-            token_sy_escrow: self.market.token_sy_escrow,
-            token_pt_escrow: self.market.token_pt_escrow,
-            address_lookup_table: self.market.address_lookup_table,
-            token_program: spl_token::id(),
-            sy_program: self.market.sy_program,
-            token_fee_treasury_sy: self.market.token_fee_treasury_sy,
-        }
-        .into();
+        let trade_metas: Vec<AccountMeta> = self.get_trade_metas(*token_transfer_authority);
 
         let CpiAccounts {
             get_sy_state,
@@ -323,26 +509,12 @@ impl Amm for ExponentAmm {
         } = self.market.cpi_accounts.clone();
 
         if is_buy_pt {
-            let unique_cpi =
-                unique_cpi_contexts(&[get_sy_state.as_slice(), deposit_sy.as_slice()].concat());
+            let remaining_accounts: Vec<AccountMeta> = self.get_remaining_accounts_metas(
+                &[get_sy_state.as_slice(), deposit_sy.as_slice()].concat(),
+            );
 
-            let remaining_accounts: Vec<AccountMeta> = cpi_contexts_to_account_metas(
-                &unique_cpi,
-                self.market_lookup_table_accounts.as_ref().unwrap(),
-            )
-            .into();
-
-            let mint_sy_remaining_accounts: Vec<AccountMeta> = MintSyAccounts {
-                depositor: *token_transfer_authority,
-                meta: self.market_additional_data.sy_meta_address,
-                mint_sy: self.market.mint_sy,
-                token_base_depositor: user_base_token_ata, //? user wfragSOL ata
-                token_yield_bearing_escrow: meta_base_token_ata, //? ATA wsol and meta?
-                token_sy_depositor: user_sy_token_ata,     //? user syToken ata
-                base_token_program: spl_token::id(),
-                token_program: spl_token::id(),
-            }
-            .into();
+            let mint_sy_remaining_accounts: Vec<AccountMeta> =
+                self.get_mint_sy_metas(*token_transfer_authority);
 
             let account_metas = [
                 trade_metas.as_slice(),
@@ -362,26 +534,12 @@ impl Amm for ExponentAmm {
                 account_metas,
             })
         } else {
-            let unique_cpi =
-                unique_cpi_contexts(&[get_sy_state.as_slice(), withdraw_sy.as_slice()].concat());
+            let remaining_accounts: Vec<AccountMeta> = self.get_remaining_accounts_metas(
+                &[get_sy_state.as_slice(), withdraw_sy.as_slice()].concat(),
+            );
 
-            let remaining_accounts: Vec<AccountMeta> = cpi_contexts_to_account_metas(
-                &unique_cpi,
-                self.market_lookup_table_accounts.as_ref().unwrap(),
-            )
-            .into();
-
-            let redeem_sy_accounts: Vec<AccountMeta> = RedeemSyAccounts {
-                signer: *token_transfer_authority,
-                meta: self.market_additional_data.sy_meta_address,
-                token_base_dst: user_base_token_ata, //? user wfragSOL ata
-                token_yield_bearing_escrow: meta_base_token_ata, //? ATA wsol and meta
-                token_sy_signer: user_sy_token_ata,  //? user syToken ata
-                mint_sy: self.market.mint_sy,
-                base_token_program: spl_token::id(),
-                token_program: spl_token::id(),
-            }
-            .into();
+            let redeem_sy_accounts: Vec<AccountMeta> =
+                self.get_redeem_sy_metas(*token_transfer_authority);
 
             let account_metas = [
                 trade_metas.as_slice(),

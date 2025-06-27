@@ -53,7 +53,7 @@ use super::loader::amm_factory;
 const JITOSOL_MINT: Pubkey = pubkey!("J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn");
 
 lazy_static! {
-    pub static ref TOKEN_MINT_AND_IN_AMOUNT: [(Pubkey, u64); 7] = [
+    pub static ref TOKEN_MINT_AND_IN_AMOUNT: [(Pubkey, u64); 9] = [
         (spl_token::native_mint::ID, 25_000_000_000),
         (JITOSOL_MINT, 8_000_000_000),
         (
@@ -70,6 +70,16 @@ lazy_static! {
         //? PT-fragSOL mint
         (
             pubkey!("8adRViFUNTe3yexj2gbQtx929zBJtWJRM8TeTzYbQBgx"),
+            1_000_000_000
+        ),
+        // KySOL mint
+        (
+            pubkey!("kySo1nETpsZE2NWe5vj2C64mPSciH1SppmHb4XieQ7B"),
+            1_000_000_000
+        ),
+        //? PT-kySOL mint
+        (
+            pubkey!("CuP74kGMbkJqMt5qmTytuFPSi3kjRvnFgiPPrPcMUfxB"),
             1_000_000_000
         ),
     ];
