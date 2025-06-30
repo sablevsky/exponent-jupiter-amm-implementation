@@ -7,7 +7,7 @@ use jupiter_amm_interface::{
     SwapAndAccountMetas, SwapParams,
 };
 use lazy_static::lazy_static;
-use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::Decimal;
 use solana_sdk::{address_lookup_table::state::AddressLookupTable, pubkey, pubkey::Pubkey};
 use spl_associated_token_account::get_associated_token_address;
@@ -39,11 +39,11 @@ mod exponent_hardcoded_amm_data {
     pub const WFRAGSOL_MARKET: Pubkey = pubkey!("EJ4GPTCnNtemBVrT7QKhRfSKfM53aV2UJYGAC8gdVz5b");
     pub const WFRAGSOL_MINT: Pubkey = pubkey!("WFRGSWjaz8tbAxsJitmbfRuFV2mSNwy7BMWcCwaA28U");
     pub const WFRAGSOL_FUND_ACCOUNT: Pubkey =
-        pubkey!("3TK9fNePM4qdKC4dwvDe8Bamv14prDqdVfuANxPeiryb"); //? Can we get it from sy_account?
+        pubkey!("3TK9fNePM4qdKC4dwvDe8Bamv14prDqdVfuANxPeiryb");
     pub const WFRAGSOL_SY_META_ADDRESS: Pubkey =
-        pubkey!("8EC8D6FG4ATRTScZvziTgtrcMv9Edvwv3hHmZNdnTCg"); //? Can we get it from mint/token_program?
+        pubkey!("8EC8D6FG4ATRTScZvziTgtrcMv9Edvwv3hHmZNdnTCg");
 
-    pub const KYSOL_MARKET: Pubkey = pubkey!("3xckb8Z5NfqptY4Pzg3KQ1bPr8ufB8CE4gJo4YMVsXvi"); //TODO: change
+    pub const KYSOL_MARKET: Pubkey = pubkey!("3xckb8Z5NfqptY4Pzg3KQ1bPr8ufB8CE4gJo4YMVsXvi");
     pub const KYSOL_MINT: Pubkey = pubkey!("kySo1nETpsZE2NWe5vj2C64mPSciH1SppmHb4XieQ7B");
     pub const KYSOL_SY_META_ADDRESS: Pubkey =
         pubkey!("4u2L26Bu8Cs1ZbWCPhv6mUtUxeqL5xC8cPh81DoW15Ad");
@@ -51,10 +51,6 @@ mod exponent_hardcoded_amm_data {
     pub const JITO_STAKE_POOL: Pubkey = pubkey!("Jito4APyf642JPZPx3hGc6WWJ8zPKtRbRs4P815Awbb");
     pub const JITO_VAULT: Pubkey = pubkey!("CQpvXgoaaawDCLh8FwMZEwQqnPakRUZ5BnzhjnEBPJv");
 }
-
-//? 1 get jito exchange rate using jito vault
-//? 2 get jito exchange rate using stake pool
-//? 3 multiply them
 
 lazy_static! {
     pub static ref EXPONENT_SWAP_PROGRAMS: HashMap<Pubkey, String> = {
@@ -68,8 +64,7 @@ lazy_static! {
 #[derive(Clone)]
 pub struct AdditionalMarketData {
     pub original_mint: Pubkey,
-    pub virtual_exchange_rate: bool,
-    // pub fund_account: Pubkey,
+    pub is_virtual_exchange_rate: bool,
     pub sy_meta_address: Pubkey,
 }
 
@@ -79,13 +74,13 @@ pub fn get_market_additional_data(
     if market_pubkey == exponent_hardcoded_amm_data::WFRAGSOL_MARKET {
         Ok(AdditionalMarketData {
             original_mint: exponent_hardcoded_amm_data::WFRAGSOL_MINT,
-            virtual_exchange_rate: true,
+            is_virtual_exchange_rate: true,
             sy_meta_address: exponent_hardcoded_amm_data::WFRAGSOL_SY_META_ADDRESS,
         })
     } else if market_pubkey == exponent_hardcoded_amm_data::KYSOL_MARKET {
         Ok(AdditionalMarketData {
             original_mint: exponent_hardcoded_amm_data::KYSOL_MINT,
-            virtual_exchange_rate: true,
+            is_virtual_exchange_rate: true,
             sy_meta_address: exponent_hardcoded_amm_data::KYSOL_SY_META_ADDRESS,
         })
     } else {
@@ -102,7 +97,7 @@ pub enum ExponentAmmType {
     KySol {
         jito_stake_pool: Pubkey,
         jito_vault: Pubkey,
-    }, //? Add restaking_vault in future
+    },
 }
 
 pub fn get_amm_type_from_market(market_pubkey: Pubkey) -> Result<ExponentAmmType, anyhow::Error> {
@@ -126,7 +121,7 @@ pub struct ExponentAmm {
     label: String,
     amm_type: ExponentAmmType,
     reserve_mints: [Pubkey; 2],
-    exchange_rate: Option<Number>, //? I.e. How much sol should be paid for 1 wfrag_sol
+    sy_exchange_rate: Option<Number>, //? I.e. How much sol should be paid for 1 sy_wfrag_sol
     market: MarketTwo,
     market_additional_data: AdditionalMarketData,
     market_lookup_table_accounts: Option<Vec<Pubkey>>,
@@ -136,9 +131,7 @@ pub struct ExponentAmm {
 }
 
 impl ExponentAmm {
-    //? can be used only in update function
-    //! Ask about virtual exchange rate! What exchange_rate does jup/titan need?
-    fn get_exchange_rate(&mut self, account_map: &AccountMap) -> Result<Number, anyhow::Error> {
+    fn get_sy_exchange_rate(&mut self, account_map: &AccountMap) -> Result<Number, anyhow::Error> {
         match self.amm_type {
             ExponentAmmType::WFragSol { fund_account, .. } => {
                 let fund_account_data = try_get_account_data(account_map, &fund_account)?;
@@ -286,6 +279,150 @@ impl ExponentAmm {
         )
         .into()
     }
+
+    fn get_trade_func_math_args(&self, is_buy_pt: bool) -> TradeFuncMathArgs {
+        let time_now = self.timestamp.load(Ordering::Relaxed) as u64;
+        let sy_exchange_rate = self.sy_exchange_rate.unwrap();
+
+        let market_asset_balance = self.market.financials.asset_balance(sy_exchange_rate);
+        let asset_balance = if is_buy_pt {
+            market_asset_balance.ceil_u64()
+        } else {
+            market_asset_balance.floor_u64()
+        };
+        let current_rate_scalar = self.market.financials.current_rate_scalar(time_now);
+        let current_rate_anchor = self
+            .market
+            .financials
+            .current_rate_anchor(sy_exchange_rate, time_now);
+        let current_fee_rate = self.market.financials.cur_fee_rate(time_now);
+
+        return TradeFuncMathArgs {
+            market_asset: asset_balance,
+            current_rate_scalar,
+            current_rate_anchor,
+            current_fee_rate,
+        };
+    }
+
+    fn get_quote(&self, quote_params: &QuoteParams) -> Result<Quote> {
+        let is_virtual_exchange_rate = self.market_additional_data.is_virtual_exchange_rate;
+        let sy_exchange_rate = self.sy_exchange_rate.unwrap();
+        let is_buy_pt = false;
+
+        let TradeFuncMathArgs {
+            market_asset,
+            current_rate_scalar,
+            current_rate_anchor,
+            current_fee_rate,
+        } = self.get_trade_func_math_args(is_buy_pt);
+
+        if is_buy_pt {
+            //? Adjust the amount for markets with virtual exchange rate
+            let net_trader_asset = if is_virtual_exchange_rate {
+                let trader_asset: Number =
+                    Number::from_natural_u64(quote_params.amount) * sy_exchange_rate;
+                -(trader_asset.floor_u64().to_i64().unwrap())
+            } else {
+                -(quote_params.amount as i64)
+            };
+
+            let TradeAssetResult {
+                asset_fee: fee_amount,
+                net_trader_pt: out_amount,
+            } = trade_asset(
+                self.market.financials.pt_balance,
+                market_asset,
+                current_rate_scalar,
+                current_rate_anchor,
+                current_fee_rate,
+                Num::from_i64(net_trader_asset),
+                false,
+            );
+
+            let fee_pct = Decimal::from_u64(fee_amount as u64)
+                .unwrap()
+                .checked_div(Decimal::from_u64(out_amount as u64).unwrap())
+                .unwrap();
+
+            // println!(
+            //     "\nBUY PT:\ninput_mint: {},\noutput_mint: {},\nin_amount: {},\nout_amount: {}\nfee_amount: {}\nfee_pct: {}\n",
+            //     quote_params.input_mint,
+            //     quote_params.output_mint,
+            //     quote_params.amount,
+            //     out_amount as u64,
+            //     fee_amount as u64,
+            //     fee_pct,
+            // );
+
+            return Ok(Quote {
+                fee_pct,
+                fee_amount: fee_amount as u64,
+                fee_mint: quote_params.input_mint,
+                in_amount: quote_params.amount,
+                out_amount: out_amount as u64,
+            });
+        } else {
+            let TradeResult {
+                asset_fee: sy_fee,
+                net_trader_asset: sy_out_amount,
+            } = trade(
+                self.market.financials.pt_balance,
+                market_asset,
+                current_rate_scalar,
+                current_rate_anchor,
+                current_fee_rate,
+                Num::from_i64(-(quote_params.amount as i64)),
+                false,
+            );
+
+            //? Adjust the amount for markets with virtual exchange rate
+            let out_amount = if is_virtual_exchange_rate {
+                let amount = Number::from_natural_u64(sy_out_amount as u64) / sy_exchange_rate;
+                amount.floor_u64()
+            } else {
+                sy_out_amount as u64
+            };
+
+            //? Adjust the amount for markets with virtual exchange rate
+            let fee_amount = if is_virtual_exchange_rate {
+                let asset_fee = Number::from_natural_u64(sy_fee as u64) / sy_exchange_rate;
+                asset_fee.floor_u64()
+            } else {
+                sy_fee as u64
+            };
+
+            let fee_pct = Decimal::from_u64(fee_amount)
+                .unwrap()
+                .checked_div(Decimal::from_u64(out_amount).unwrap())
+                .unwrap();
+
+            // println!(
+            //     "\nSELL PT:\ninput_mint: {},\noutput_mint: {},\nnet_trader_asset: {},\nnet_trader_pt: {}\nfee_amount: {}\nfee_pct: {}\n",
+            //     quote_params.input_mint,
+            //     quote_params.output_mint,
+            //     -(quote_params.amount as i64),
+            //     out_amount,
+            //     fee_amount,
+            //     fee_pct,
+            // );
+
+            return Ok(Quote {
+                fee_pct,
+                in_amount: quote_params.amount,
+                out_amount,
+                fee_amount: fee_amount,
+                fee_mint: quote_params.output_mint,
+            });
+        }
+    }
+}
+
+struct TradeFuncMathArgs {
+    market_asset: u64,
+    current_rate_scalar: f64,
+    current_rate_anchor: f64,
+    current_fee_rate: f64,
 }
 
 impl Amm for ExponentAmm {
@@ -312,7 +449,7 @@ impl Amm for ExponentAmm {
             label,
             amm_type,
             reserve_mints,
-            exchange_rate: None,
+            sy_exchange_rate: None,
             market: market_state,
             market_additional_data: market_additional_data.clone(),
             market_lookup_table_accounts: None,
@@ -357,7 +494,7 @@ impl Amm for ExponentAmm {
         // update market state
         self.market = market_state;
 
-        self.exchange_rate = Some(self.get_exchange_rate(account_map)?);
+        self.sy_exchange_rate = Some(self.get_sy_exchange_rate(account_map)?);
 
         // update reserves
         self.reserves = [
@@ -374,115 +511,11 @@ impl Amm for ExponentAmm {
 
         self.market_lookup_table_accounts = Some(lookup_table_addresses);
 
-        // println!("\nlookup_table: {:?}\n", lookup_table_addresses);
-
         Ok(())
     }
 
     fn quote(&self, quote_params: &QuoteParams) -> Result<Quote> {
-        let time_now = self.timestamp.load(Ordering::Relaxed) as u64;
-        let sy_exchange_rate = self.exchange_rate.unwrap();
-
-        let virtual_exchange_rate = self.market_additional_data.virtual_exchange_rate;
-
-        // println!("\nquote_params: {:?}\n", quote_params);
-
-        let is_buy_pt = quote_params.input_mint == self.reserve_mints[0];
-
-        // ceil on asset balance when buying PT (make asset cheaper)
-        // floor on asset balance when selling PT (make asset more expensive)
-        let asset_balance = self.market.financials.asset_balance(sy_exchange_rate);
-        let asset_balance = if is_buy_pt {
-            asset_balance.ceil_u64()
-        } else {
-            asset_balance.floor_u64()
-        };
-
-        // println!("\nsy_exchange_rate: {}\n", sy_exchange_rate);
-
-        let current_rate_scalar = self.market.financials.current_rate_scalar(time_now);
-        let current_rate_anchor = self
-            .market
-            .financials
-            .current_rate_anchor(sy_exchange_rate, time_now);
-        let current_fee_rate = self.market.financials.cur_fee_rate(time_now);
-
-        if is_buy_pt {
-            let net_trader_asset = if virtual_exchange_rate {
-                let trader_asset: Number =
-                    Number::from_natural_u64(quote_params.amount) * sy_exchange_rate;
-                -(trader_asset.floor_u64().to_i64().unwrap())
-            } else {
-                -(quote_params.amount as i64)
-            };
-
-            let TradeAssetResult {
-                asset_fee,
-                net_trader_pt: out_amount,
-            } = trade_asset(
-                self.market.financials.pt_balance,
-                asset_balance,
-                current_rate_scalar,
-                current_rate_anchor,
-                current_fee_rate,
-                Num::from_i64(net_trader_asset),
-                false,
-            );
-
-            println!(
-                "\nBUY PT:\ninput_mint: {},\noutput_mint: {},\nnet_trader_asset: {},\nasset_fee: {},\nnet_trader_pt: {} \n",
-                quote_params.input_mint,
-                quote_params.output_mint,
-                -(quote_params.amount as i64),
-                asset_fee,
-                out_amount
-            );
-
-            return Ok(Quote {
-                fee_pct: Decimal::default(), //TODO How to calculate fee_pct in a proper way?
-                in_amount: quote_params.amount,
-                out_amount: out_amount as u64,
-                fee_amount: asset_fee as u64,
-                fee_mint: self.market.mint_sy,
-            });
-        } else {
-            let net_trader_pt = if virtual_exchange_rate {
-                let trader_asset = Number::from_natural_u64(quote_params.amount) / sy_exchange_rate;
-                -(trader_asset.floor_u64().to_i64().unwrap())
-            } else {
-                -(quote_params.amount as i64)
-            };
-
-            let TradeResult {
-                asset_fee,
-                net_trader_asset,
-            } = trade(
-                self.market.financials.pt_balance,
-                asset_balance,
-                current_rate_scalar,
-                current_rate_anchor,
-                current_fee_rate,
-                Num::from_i64(net_trader_pt),
-                false,
-            );
-
-            println!(
-                "\nSELL PT:\ninput_mint: {},\noutput_mint: {},\nnet_trader_pt: {},\n asset_fee: {},\nnet_trader_asset: {}\n",
-                quote_params.input_mint,
-                quote_params.output_mint,
-                -(quote_params.amount as i64),
-                asset_fee,
-                net_trader_asset
-            );
-
-            return Ok(Quote {
-                fee_pct: Decimal::default(), //TODO How to calculate fee_pct in a proper way?
-                in_amount: quote_params.amount,
-                out_amount: net_trader_asset as u64,
-                fee_amount: asset_fee as u64,
-                fee_mint: self.market.mint_sy,
-            });
-        }
+        self.get_quote(quote_params)
     }
 
     fn supports_exact_out(&self) -> bool {
@@ -497,7 +530,8 @@ impl Amm for ExponentAmm {
             ..
         } = swap_params;
         let is_buy_pt = *source_mint == self.reserve_mints[0];
-        let exchange_rate_f64 = self.exchange_rate.unwrap().to_f64().unwrap();
+        let exchange_rate_f64 = self.sy_exchange_rate.unwrap().to_f64().unwrap();
+        let is_virtual_exchange_rate = self.market_additional_data.is_virtual_exchange_rate;
 
         let trade_metas: Vec<AccountMeta> = self.get_trade_metas(*token_transfer_authority);
 
@@ -529,6 +563,7 @@ impl Amm for ExponentAmm {
             Ok(SwapAndAccountMetas {
                 swap: Swap::Exponent {
                     exchange_rate: exchange_rate_f64,
+                    is_virtual_exchange_rate,
                     rem_accounts_until: mint_sy_rem_accounts_until,
                 },
                 account_metas,
@@ -554,6 +589,7 @@ impl Amm for ExponentAmm {
             Ok(SwapAndAccountMetas {
                 swap: Swap::Exponent {
                     exchange_rate: exchange_rate_f64,
+                    is_virtual_exchange_rate,
                     rem_accounts_until: redeem_sy_rem_accounts_until,
                 },
                 account_metas,
