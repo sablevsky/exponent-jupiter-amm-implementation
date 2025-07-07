@@ -52,6 +52,7 @@ mod exponent_hardcoded_amm_data {
 
     pub const JITO_STAKE_POOL: Pubkey = pubkey!("Jito4APyf642JPZPx3hGc6WWJ8zPKtRbRs4P815Awbb");
     pub const JITO_VAULT: Pubkey = pubkey!("CQpvXgoaaawDCLh8FwMZEwQqnPakRUZ5BnzhjnEBPJv");
+    pub const JITO_TOKEN_MINT: Pubkey = pubkey!("jtojtomepa8beP8AuQc6eXt5FriJwfFMwQx2v2f9mCL");
 }
 
 lazy_static! {
@@ -209,6 +210,10 @@ impl ExponentAmm {
             &self.market_additional_data.sy_meta_address,
             &self.market_additional_data.original_mint,
         );
+        let jito_token_meta_ata = get_associated_token_address(
+            &self.market_additional_data.sy_meta_address,
+            &exponent_hardcoded_amm_data::JITO_TOKEN_MINT,
+        );
 
         match self.amm_type {
             ExponentAmmType::WFragSol { .. } => fragmetric::MintSyAccounts {
@@ -220,6 +225,8 @@ impl ExponentAmm {
                 token_sy_depositor: user_sy_token_ata,
                 base_token_program: spl_token::id(),
                 token_program: spl_token::id(),
+                wfragsol_fund_account: exponent_hardcoded_amm_data::WFRAGSOL_FUND_ACCOUNT,
+                jito_token_meta_ata,
             }
             .into(),
             ExponentAmmType::KySol { jito_vault, .. } => kyros::MintSyAccounts {
@@ -232,6 +239,8 @@ impl ExponentAmm {
                 jito_vault,
                 base_token_program: spl_token::id(),
                 token_program: spl_token::id(),
+                jito_stake_pool: exponent_hardcoded_amm_data::JITO_STAKE_POOL,
+                jito_token_meta_ata,
             }
             .into(),
         }
@@ -247,6 +256,10 @@ impl ExponentAmm {
             &self.market_additional_data.sy_meta_address,
             &self.market_additional_data.original_mint,
         );
+        let jito_token_meta_ata = get_associated_token_address(
+            &self.market_additional_data.sy_meta_address,
+            &exponent_hardcoded_amm_data::JITO_TOKEN_MINT,
+        );
 
         match self.amm_type {
             ExponentAmmType::WFragSol { .. } => fragmetric::RedeemSyAccounts {
@@ -258,6 +271,8 @@ impl ExponentAmm {
                 mint_sy: self.market.mint_sy,
                 base_token_program: spl_token::id(),
                 token_program: spl_token::id(),
+                wfragsol_fund_account: exponent_hardcoded_amm_data::WFRAGSOL_FUND_ACCOUNT,
+                jito_token_meta_ata,
             }
             .into(),
             ExponentAmmType::KySol { jito_vault, .. } => kyros::RedeemSyAccounts {
@@ -270,6 +285,8 @@ impl ExponentAmm {
                 mint_sy: self.market.mint_sy,
                 base_token_program: spl_token::id(),
                 token_program: spl_token::id(),
+                jito_stake_pool: exponent_hardcoded_amm_data::JITO_STAKE_POOL,
+                jito_token_meta_ata,
             }
             .into(),
         }
@@ -554,9 +571,15 @@ impl Amm for ExponentAmm {
             let mint_sy_remaining_accounts: Vec<AccountMeta> =
                 self.get_mint_sy_metas(*token_transfer_authority);
 
+            let exponent_program_account_meta = vec![AccountMeta::new_readonly(
+                exponent_swap_programs::EXPONENT_CORE,
+                false,
+            )];
+
             let account_metas = [
                 trade_metas.as_slice(),
                 mint_sy_remaining_accounts.as_slice(),
+                exponent_program_account_meta.as_slice(),
                 remaining_accounts.as_slice(),
             ]
             .concat();

@@ -19,6 +19,8 @@ pub struct MintSyAccounts {
     pub base_token_program: Pubkey,
     /** SY token program (Usually Token Program) */
     pub token_program: Pubkey,
+    pub jito_stake_pool: Pubkey,
+    pub jito_token_meta_ata: Pubkey,
 }
 
 impl From<MintSyAccounts> for Vec<AccountMeta> {
@@ -33,6 +35,8 @@ impl From<MintSyAccounts> for Vec<AccountMeta> {
             AccountMeta::new_readonly(accounts.jito_vault, false),
             AccountMeta::new_readonly(accounts.base_token_program, false),
             AccountMeta::new_readonly(accounts.token_program, false),
+            AccountMeta::new(accounts.jito_stake_pool, false),
+            AccountMeta::new_readonly(accounts.jito_token_meta_ata, false),
         ]
     }
 }

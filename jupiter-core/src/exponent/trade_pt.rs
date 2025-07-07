@@ -13,6 +13,8 @@ pub struct TradePt {
     pub token_program: Pubkey,
     pub sy_program: Pubkey,
     pub token_fee_treasury_sy: Pubkey,
+    pub event_authority: Pubkey,
+    pub exponent_program_id: Pubkey,
 }
 
 impl From<TradePt> for Vec<AccountMeta> {
@@ -28,6 +30,8 @@ impl From<TradePt> for Vec<AccountMeta> {
             AccountMeta::new_readonly(accounts.token_program, false),
             AccountMeta::new_readonly(accounts.sy_program, false),
             AccountMeta::new(accounts.token_fee_treasury_sy, false),
+            AccountMeta::new_readonly(accounts.event_authority, false),
+            AccountMeta::new_readonly(accounts.exponent_program_id, false),
         ]
     }
 }

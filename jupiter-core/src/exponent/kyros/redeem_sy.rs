@@ -19,6 +19,8 @@ pub struct RedeemSyAccounts {
     pub base_token_program: Pubkey,
     /** SY token program (Usually Token Program) */
     pub token_program: Pubkey,
+    pub jito_stake_pool: Pubkey,
+    pub jito_token_meta_ata: Pubkey,
 }
 
 impl From<RedeemSyAccounts> for Vec<AccountMeta> {
@@ -33,6 +35,8 @@ impl From<RedeemSyAccounts> for Vec<AccountMeta> {
             AccountMeta::new(accounts.mint_sy, false),
             AccountMeta::new_readonly(accounts.base_token_program, false),
             AccountMeta::new_readonly(accounts.token_program, false),
+            AccountMeta::new(accounts.jito_stake_pool, false),
+            AccountMeta::new_readonly(accounts.jito_token_meta_ata, false),
         ]
     }
 }
