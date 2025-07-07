@@ -1,5 +1,4 @@
 use anchor_lang::prelude::*;
-use std::collections::HashMap;
 
 /// Account lists for validating CPI calls to the SY program
 #[derive(AnchorDeserialize, AnchorSerialize, Default, Clone, Debug)]
@@ -33,17 +32,23 @@ pub struct CpiInterfaceContext {
  * Prioritizes structs with is_writable=true and/or is_signer=true
  */
 pub fn unique_cpi_contexts(contexts: &[CpiInterfaceContext]) -> Vec<CpiInterfaceContext> {
-    let mut seen: HashMap<u8, CpiInterfaceContext> = HashMap::new();
+    let mut new_vec: Vec<CpiInterfaceContext> = Vec::new();
 
     for context in contexts {
-        let entry = seen
-            .entry(context.alt_index)
-            .or_insert_with(|| context.clone());
-        entry.is_writable |= context.is_writable;
-        entry.is_signer |= context.is_signer;
+        let found_idx = new_vec
+            .iter()
+            .position(|x| x.alt_index == context.alt_index);
+
+        if found_idx.is_some() {
+            let entry: &mut CpiInterfaceContext = new_vec.get_mut(found_idx.unwrap()).unwrap();
+            entry.is_writable |= context.is_writable;
+            entry.is_signer |= context.is_signer;
+        } else {
+            new_vec.push(context.clone());
+        }
     }
 
-    return seen.into_values().collect();
+    return new_vec;
 }
 
 /**
