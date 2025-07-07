@@ -31,6 +31,8 @@ use crate::exponent::{
 mod exponent_swap_programs {
     use super::*;
     pub const EXPONENT_CORE: Pubkey = pubkey!("ExponentnaRg3CQbW6dqQNZKXp7gtZ9DGMp1cwC4HAS7");
+    pub const EXPONENT_EVENT_AUTHORITY: Pubkey =
+        pubkey!("2qFqt7c5teKuuTMT7FCG24DzvsUwicuYovGpKAoB2XnK");
 }
 
 mod exponent_hardcoded_amm_data {
@@ -191,6 +193,8 @@ impl ExponentAmm {
             token_program: spl_token::id(),
             sy_program: self.market.sy_program,
             token_fee_treasury_sy: self.market.token_fee_treasury_sy,
+            event_authority: exponent_swap_programs::EXPONENT_EVENT_AUTHORITY,
+            exponent_program_id: exponent_swap_programs::EXPONENT_CORE,
         }
         .into()
     }
