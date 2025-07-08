@@ -32,23 +32,24 @@ pub struct CpiInterfaceContext {
  * Prioritizes structs with is_writable=true and/or is_signer=true
  */
 pub fn unique_cpi_contexts(contexts: &[CpiInterfaceContext]) -> Vec<CpiInterfaceContext> {
-    let mut new_vec: Vec<CpiInterfaceContext> = Vec::new();
+    let mut unique_contexts: Vec<CpiInterfaceContext> = Vec::new();
 
     for context in contexts {
-        let found_idx = new_vec
+        let found_idx = unique_contexts
             .iter()
             .position(|x| x.alt_index == context.alt_index);
 
         if found_idx.is_some() {
-            let entry: &mut CpiInterfaceContext = new_vec.get_mut(found_idx.unwrap()).unwrap();
+            let entry: &mut CpiInterfaceContext =
+                unique_contexts.get_mut(found_idx.unwrap()).unwrap();
             entry.is_writable |= context.is_writable;
             entry.is_signer |= context.is_signer;
         } else {
-            new_vec.push(context.clone());
+            unique_contexts.push(context.clone());
         }
     }
 
-    return new_vec;
+    return unique_contexts;
 }
 
 /**
