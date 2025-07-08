@@ -61,7 +61,6 @@ impl SplTokenSwapAmm {
         Pubkey::find_program_address(&[&self.key.to_bytes()], &self.program_id).0
     }
 }
-
 impl Clone for SplTokenSwapAmm {
     fn clone(&self) -> Self {
         SplTokenSwapAmm {
@@ -111,6 +110,7 @@ impl Amm for SplTokenSwapAmm {
         })
     }
 
+    //? A human readable label of the underlying DEX
     fn label(&self) -> String {
         self.label.clone()
     }
@@ -119,18 +119,23 @@ impl Amm for SplTokenSwapAmm {
         self.program_id
     }
 
+    //? The pool state or market state address
     fn key(&self) -> Pubkey {
         self.key
     }
 
+    //? The mints that can be traded
     fn get_reserve_mints(&self) -> Vec<Pubkey> {
         self.reserve_mints.to_vec()
     }
 
+    //? The accounts necessary to produce a quote
     fn get_accounts_to_update(&self) -> Vec<Pubkey> {
         vec![self.state.token_a, self.state.token_b]
     }
 
+    //? Picks necessary accounts to update it's internal state
+    //? Heavy deserialization and precomputation caching should be done in this function
     fn update(&mut self, account_map: &AccountMap) -> Result<()> {
         let token_a_account = try_get_account_data(account_map, &self.state.token_a)?;
         let token_a_token_account = TokenAccount::unpack(token_a_account)?;
@@ -173,6 +178,7 @@ impl Amm for SplTokenSwapAmm {
         })
     }
 
+    //? Indicates which Swap has to be performed along with all the necessary account metas
     fn get_swap_and_account_metas(&self, swap_params: &SwapParams) -> Result<SwapAndAccountMetas> {
         let SwapParams {
             token_transfer_authority,

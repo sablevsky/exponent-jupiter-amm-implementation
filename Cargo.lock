@@ -1714,6 +1714,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "exponent-time-curve"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "26f8b68739d1d9c47a468667693780aefc4d5bc962908a2dfc39177136fd1108"
+
+[[package]]
 name = "fastbloom"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2480,6 +2486,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4a5f13b858c8d314ee3e8f639011f7ccefe71f97f96e50151fb991f267928e2c"
 
 [[package]]
+name = "jito-account-traits-derive"
+version = "0.0.3"
+source = "git+https://github.com/valentinmadrid/jito-restaking?branch=master#b7aa9c656d184cd893074a47cbe5aefbd24e790e"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.101",
+]
+
+[[package]]
+name = "jito-bytemuck"
+version = "0.0.3"
+source = "git+https://github.com/valentinmadrid/jito-restaking?branch=master#b7aa9c656d184cd893074a47cbe5aefbd24e790e"
+dependencies = [
+ "borsh 0.10.4",
+ "bytemuck",
+ "jito-account-traits-derive",
+ "solana-program",
+]
+
+[[package]]
 name = "jni"
 version = "0.21.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2550,8 +2577,7 @@ dependencies = [
 [[package]]
 name = "jupiter-amm-interface"
 version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb5138000fadc3d0bcd8c6b347fa262bf2df43ec4132abca4ee7e8fff1878bc9"
+source = "git+https://github.com/sablevsky/jupiter-amm-interface?rev=bd3a019573f35ddbc64b321f3957d2dd4f3f2034#bd3a019573f35ddbc64b321f3957d2dd4f3f2034"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -2573,9 +2599,13 @@ dependencies = [
  "assert_matches",
  "async-trait",
  "bincode",
+ "borsh 0.10.4",
+ "bytemuck",
  "clap",
+ "exponent-time-curve",
  "glob",
  "itertools 0.12.1",
+ "jito-bytemuck",
  "jupiter",
  "jupiter-amm-interface",
  "lazy_static",
@@ -2588,6 +2618,8 @@ dependencies = [
  "solana-program-test",
  "solana-sdk",
  "spl-associated-token-account 6.0.0",
+ "spl-math 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "spl-stake-pool",
  "spl-token 7.0.0",
  "spl-token-2022 7.0.0",
  "spl-token-swap",
@@ -6262,6 +6294,20 @@ dependencies = [
 [[package]]
 name = "spl-math"
 version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5cc5a6cc7a4f0cf7813ce44153bba73280909f697d7f6baf7b9f223a255e7887"
+dependencies = [
+ "borsh 1.5.7",
+ "num-derive",
+ "num-traits",
+ "solana-program",
+ "thiserror 1.0.69",
+ "uint",
+]
+
+[[package]]
+name = "spl-math"
+version = "0.3.0"
 source = "git+https://github.com/jup-ag/solana-program-library.git?rev=199de2208534f37fe077a0b1d7a9e17f305ed363#199de2208534f37fe077a0b1d7a9e17f305ed363"
 dependencies = [
  "num-traits",
@@ -6361,6 +6407,28 @@ dependencies = [
  "quote",
  "sha2 0.10.9",
  "syn 2.0.101",
+]
+
+[[package]]
+name = "spl-stake-pool"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc2b2908579aefbdb1ed3e941252cab09e7e471e5b52efd5ecc54d20829ef5e8"
+dependencies = [
+ "arrayref",
+ "bincode",
+ "borsh 1.5.7",
+ "bytemuck",
+ "num-derive",
+ "num-traits",
+ "num_enum",
+ "serde",
+ "serde_derive",
+ "solana-program",
+ "solana-security-txt",
+ "spl-pod 0.3.1",
+ "spl-token-2022 4.0.0",
+ "thiserror 2.0.12",
 ]
 
 [[package]]
@@ -6634,7 +6702,7 @@ dependencies = [
  "num-derive",
  "num-traits",
  "solana-program",
- "spl-math",
+ "spl-math 0.3.0 (git+https://github.com/jup-ag/solana-program-library.git?rev=199de2208534f37fe077a0b1d7a9e17f305ed363)",
  "spl-token 7.0.0",
  "spl-token-2022 6.0.0",
  "thiserror 2.0.12",
